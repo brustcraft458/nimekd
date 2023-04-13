@@ -1,11 +1,41 @@
 import os
-import requests
-import time
-import aiohttp
-import asyncio
-from tabulate import tabulate
-from tqdm import tqdm
-from bs4 import BeautifulSoup
+
+def clear():
+    if (os.name == 'nt'):
+        os.system('cls')
+    else:
+        os.system('clear')
+
+# Load Module
+module_loaded = False
+module_trying = 0
+module_list = ["requests", "aiohttp", "bs4", "tabulate", "tqdm"]
+
+while(module_loaded == False):
+    clear()
+    if (module_trying > 3):
+        print("Gagal menginstall modul\n")
+        print("Anda bisa menginstall manual dengan command:")
+        for modul in module_list:
+            print(f"pip install {modul}")
+        exit()
+    
+    try:
+        import requests
+        import time
+        import aiohttp
+        import asyncio
+        from bs4 import BeautifulSoup
+        from tabulate import tabulate
+        from tqdm import tqdm
+        module_loaded = True
+    except:
+        print("Menginstall Modul")
+        for modul in module_list:
+            if (os.system(f"pip show {modul}") != 0):
+                os.system(f"pip install {modul}")
+        module_trying += 1
+
 loop = asyncio.get_event_loop()
 session = requests.Session()
 session_headers = {'User-Agent': 'Mozilla/5.0'}
@@ -29,21 +59,32 @@ def string_leftTrim(str, max, inden):
     str2 = ""
 
     for n in range(max):
-        str2 += str[n]
-        if (n != max):
+        if (str2 != ""):
             str2 += inden
+        str2 += str[n]
 
     return str2
 
-def string_rightTrim(str, skip, inden):
+def string_rightTrim(str, skip, inden, stcase):
     str = str.split(inden)
     lenn = len(str)
     str2 = ""
 
-    for n in range(skip):
-        str2 += str[(lenn - skip) + n]
-        if (n != skip):
-            str2 += inden
+    if (skip == -1):
+        found = False
+        for n in range(lenn):
+            if (str[n].lower() == stcase):
+                found = True
+            if (found):
+                if (str2 != ""):
+                    str2 += inden
+                str2 += str[n]
+            
+    else:
+        for n in range(skip):
+            if (str2 != ""):
+                str2 += inden
+            str2 += str[(lenn - skip) + n]
 
     return str2
 
@@ -113,8 +154,9 @@ class reqasync:
         reqasync.clear()
 
 # Redirect for Instant Download via downloaddesu
-def downloaddesu_parse(url):
+def downloaddesu_parse(idname):
     try:
+        url = f"https://otakudesu.lol/episode/{idname}"
         data = []
         docc = session.get(url, headers=session_headers)
         docc = BeautifulSoup(docc.text, "html.parser")
@@ -126,7 +168,7 @@ def downloaddesu_parse(url):
             if (judul != None):
                 judul = judul.get_text()
                 link = ldoc.find_next('a').get('href')
-                anime = string_rightTrim(url, 1, "/").replace("-", "_").replace("/", "")
+                anime = idname.replace("-", "_").replace("/", "")
 
                 data.append({'judul': judul, 'url': link, 'anime': anime})
 
@@ -182,6 +224,7 @@ def downloaddesu_savefile(url, filepath):
             f.write(docc.content)
 
         download_bar.clear()
+        download_bar.close()
         if (pos != length):
             return ""
         
@@ -207,7 +250,7 @@ def main():
     jumlah = len(json_nimek)
     data_animek = []
     data_download = [None] * jumlah
-    loading_bar = tqdm(total=25, unit="%", desc="Loading...", ncols=50, leave=False)
+    print("Loading...")
     
     # Pilihan Anime
     for no in range(jumlah):
@@ -220,26 +263,24 @@ def main():
             # sinopsis
             sinopsis = data['anime_detail']['sinopsis']
             sinopsis = "".join(sinopsis)
-            data_animek[no][2] = string_short(sinopsis, 30)
+            data_animek[no][1] = string_short(sinopsis, 15)
 
             # link download
             data_download[no] = data['episode_list']
-            loading_bar.update(1)
             return
 
         data_animek.append([
-            f"{no + 1}. {string_short(judul, 16)}",
-            tanggal,
+            f"{no + 1}. {string_short(judul, 10)}",
             "..."
         ])
 
         reqasync.get(endpoint, "json", None, deskripsi_get, {'nomor': no})
 
     reqasync.execute_waiting()
-    loading_bar.close()
+    clear()
 
     # Display Anime
-    table_head = ["judul", "tanggal", "deskripsi"]
+    table_head = ["judul", "deskripsi"]
     print(tabulate(data_animek, headers=table_head))
     print("")
 
@@ -253,13 +294,19 @@ def main():
     no = 0
     for data in data_download[pilih]:
         judul = data['episode_title']
-        judul = string_short(judul, 60)
+        judul = string_short(string_rightTrim(judul, -1, " ", "episode"), 30)
         endpoint = data['episode_endpoint']
 
         if (endpoint.find("episode") != -1):
-            table_episode.append([f"{no + 1}. {judul}"])
+            table_episode.append([judul])
             list_episode.append(endpoint)
             no += 1
+    # num
+    list_episode.reverse()
+    table_episode.reverse()
+    for n in range(no):
+        table_episode[n][0] = f"{n + 1}. {table_episode[n][0]}"
+
     
     # Display Episode
     table_head = ["judul"]
@@ -267,14 +314,11 @@ def main():
     print("")
 
     pilih = int(input("Pilih Episode yg mau di download? ")) - 1
-    urldownload = list_episode[pilih]
-    print(urldownload)
-    urldownload = f"https://otakudesu.lol/episode/{urldownload}"
     print("\n")
 
     # Pilihan Resolusi
     table_download = []
-    list_download = downloaddesu_parse(urldownload)
+    list_download = downloaddesu_parse(list_episode[pilih])
     for no in range(len(list_download)):
         table_download.append([f"{no + 1}. {list_download[no]['judul']}"])
 
@@ -287,7 +331,11 @@ def main():
 
     if (os.path.exists("download") == False):
         os.mkdir("download")
-    downloaddesu_savefile(list_download[pilih]['url'], f"download\{list_download[pilih]['anime']}.mp4")
+    pathdownload = downloaddesu_savefile(list_download[pilih]['url'], f"download/{list_download[pilih]['anime']}.mp4")
+    if (pathdownload != ""):
+        print(f"Download Tersimpan: {pathdownload}")
+    else:
+        print(f"Download Gagal")
 
 if __name__ == '__main__':
    main()
